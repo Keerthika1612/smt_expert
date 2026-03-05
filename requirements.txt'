@@ -1,0 +1,10 @@
+streamlit
+requests
+fastapi
+uvicorn
+langchain
+langchain-community
+langchain-ollama
+langchain-chroma
+pydantic
+unstructured

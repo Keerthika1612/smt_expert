@@ -1,0 +1,6 @@
+__pycache__/
+smt_expert_db/
+*.py[cod]
+*$py.class
+.env
+.venv/
