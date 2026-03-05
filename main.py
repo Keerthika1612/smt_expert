@@ -15,7 +15,7 @@ app = FastAPI()
 # --- CONFIGURATION ---
 FOLDERS = ["./SMT", "./WAVE"]
 DB_DIR = "./smt_expert_db"
-MODEL_NAME = "llama3.1"
+MODEL_NAME = "llama3.2-vision"
 EMBED_MODEL = "mxbai-embed-large"
 
 # Initialize global variable for the chain
