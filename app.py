@@ -12,7 +12,7 @@ with st.sidebar:
     # This allows your friend to paste the new link you give them
     ngrok_url = st.text_input(
         "Enter Active ngrok URL:", 
-        placeholder="https://xxxx-xxx.ngrok-free.app",
+        placeholder="https://87fb-106-208-32-20.ngrok-free.app",
         help="Paste the forwarding URL from the ngrok terminal here."
     )
     
