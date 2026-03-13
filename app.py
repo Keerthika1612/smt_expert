@@ -3,64 +3,89 @@ import requests
 import base64
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="SMT Expert System", page_icon="🔧")
+st.set_page_config(page_title="SMT Expert System", page_icon="🔧", layout="wide")
 st.title("🔧 SMT & Wave Expert")
 
 # --- 1. DYNAMIC CONFIGURATION ---
 with st.sidebar:
     st.header("🔗 Backend Connection")
-    # This allows your friend to paste the new link you give them
     ngrok_url = st.text_input(
         "Enter Active ngrok URL:", 
         placeholder="https://xxxx-xxx.ngrok-free.app",
+        value=st.session_state.get("last_url", ""),
         help="Paste the forwarding URL from the ngrok terminal here."
     )
+    if ngrok_url:
+        st.session_state["last_url"] = ngrok_url
+
+    st.divider()
+    st.header("🎙️ Voice Input")
+    audio_value = st.audio_input("Describe the defect")
     
     st.divider()
     st.header("📸 Visual Inspection")
     uploaded_file = st.file_uploader("Upload defect photo", type=["jpg", "jpeg", "png"])
-    if uploaded_file:
-        st.image(uploaded_file, caption="Defect to analyze")
 
 # --- 2. VALIDATION ---
-# If the URL is missing, stop the app and show a friendly message
 if not ngrok_url:
-    st.info("👋 Welcome! To begin, please paste the active **ngrok URL** provided by the technician in the sidebar.")
+    st.info("👋 Welcome! Please paste your **ngrok URL** in the sidebar to start.")
     st.stop()
 
-# Ensure the URL doesn't end with a slash to prevent double slashes
 base_url = ngrok_url.strip().rstrip("/")
-TARGET_URL = f"{base_url}/stream"
+STREAM_URL = f"{base_url}/stream"
+VOICE_URL = f"{base_url}/transcribe"
+headers = {"ngrok-skip-browser-warning": "true"}
 
-# --- SETUP HEADERS ---
-headers = {
-    "Content-Type": "application/json",
-    "ngrok-skip-browser-warning": "true" 
-}
-
-# --- INITIALIZE CHAT HISTORY ---
+# --- 3. INITIALIZE STATE ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "last_processed_audio" not in st.session_state:
+    st.session_state.last_processed_audio = None
 
-# --- DISPLAY CHAT HISTORY ---
+# --- 4. PROCESS VOICE INPUT (LOGIC) ---
+# We check if there is new audio that we haven't processed yet
+if audio_value and audio_value != st.session_state.last_processed_audio:
+    with st.spinner("Transcribing..."):
+        try:
+            files = {"file": ("audio.wav", audio_value.getvalue(), "audio/wav")}
+            v_resp = requests.post(VOICE_URL, files=files, headers=headers)
+            v_resp.raise_for_status()
+            transcript = v_resp.json().get("text", "")
+            
+            # Store the transcript so the user can see/edit it in the chat input
+            st.session_state["voice_draft"] = transcript
+            st.session_state.last_processed_audio = audio_value
+            st.rerun() # Refresh to put the text in the chat box
+        except Exception as e:
+            st.sidebar.error(f"Voice Error: {e}")
+
+# --- 5. DISPLAY CHAT HISTORY ---
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# --- CHAT INPUT ---
-if prompt := st.chat_input("Ask about a defect..."):
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
+# --- 6. CHAT INPUT ---
+# If we have a voice transcript, we pre-fill the chat input
+placeholder_text = st.session_state.get("voice_draft", "Ask about a defect...")
+prompt = st.chat_input(placeholder_text)
 
-    # --- PREPARE PAYLOAD ---
-    payload = {"input": prompt}
+# If the user hits enter (or voice was captured)
+if prompt or ("voice_draft" in st.session_state and st.session_state.voice_draft):
+    # Priority: If user typed something, use that. Otherwise use the voice draft.
+    final_prompt = prompt if prompt else st.session_state.voice_draft
     
-    if uploaded_file:
-        uploaded_file.seek(0)
-        encoded_image = base64.b64encode(uploaded_file.read()).decode('utf-8')
-        payload["image"] = encoded_image
+    # Clear the draft so it doesn't repeat
+    if "voice_draft" in st.session_state:
+        del st.session_state["voice_draft"]
 
+    # Add to UI
+    st.session_state.messages.append({"role": "user", "content": final_prompt})
+    with st.chat_message("user"):
+        st.markdown(final_prompt)
+
+    # Prepare payload
+    payload = {"input": final_prompt}
+    
     # --- API CALL TO BACKEND ---
     with st.chat_message("assistant"):
         response_placeholder = st.empty()
@@ -68,11 +93,11 @@ if prompt := st.chat_input("Ask about a defect..."):
         
         try:
             with requests.post(
-                TARGET_URL, 
+                STREAM_URL, 
                 json=payload, 
-                headers=headers, 
+                headers={"Content-Type": "application/json", **headers}, 
                 stream=True,
-                timeout=90 # Increased timeout for cloud-to-local latency
+                timeout=120 
             ) as r:
                 r.raise_for_status() 
                 for chunk in r.iter_content(chunk_size=None, decode_unicode=True):
@@ -85,4 +110,3 @@ if prompt := st.chat_input("Ask about a defect..."):
             
         except Exception as e:
             st.error(f"❌ Connection Error: {e}")
-            st.warning("Ensure the ngrok URL is correct and the backend is running on the technician's laptop.")
